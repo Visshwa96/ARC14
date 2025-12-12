@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import axios from 'axios'
 import useStore from '../store/useStore'
 
+const API_URL = import.meta.env.VITE_BACKEND_URL || (window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : '/api')
+
 function ScheduledTasks() {
   const { scheduledTasks, fetchScheduledTasks, createScheduledTask, updateScheduledTask, completeScheduledTask, deleteScheduledTask, fetchTaskStats, loading, error } = useStore()
   
@@ -37,7 +39,7 @@ function ScheduledTasks() {
 
   const loadSchedulingConfig = async () => {
     try {
-      const response = await axios.get('/api/scheduled-tasks/config/scheduling-window')
+      const response = await axios.get(`${API_URL}/scheduled-tasks/config/scheduling-window`)
       setSchedulingConfig(response.data)
     } catch (error) {
       console.error('Failed to load scheduling config:', error)
@@ -148,7 +150,7 @@ function ScheduledTasks() {
     setEmailTestStatus(null)
 
     try {
-      const response = await axios.post('/api/scheduled-tasks/test-email', { 
+      const response = await axios.post(`${API_URL}/scheduled-tasks/test-email`, { 
         email: userEmail 
       })
       
