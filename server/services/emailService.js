@@ -375,12 +375,17 @@ export const checkAndSendReminders = async (recipientEmail) => {
 // Send test email
 export const sendTestEmail = async (recipientEmail) => {
   try {
+    console.log(`📧 sendTestEmail called for: ${recipientEmail}`)
+    
     if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
+      console.log('❌ Email credentials not configured')
       throw new Error('Email credentials not configured')
     }
 
+    console.log('✅ Email credentials found, creating transporter...')
     const transporter = createTransporter()
 
+    console.log('📝 Preparing mail options...')
     const mailOptions = {
       from: {
         name: 'ARC-14 Task Scheduler',
@@ -399,7 +404,9 @@ export const sendTestEmail = async (recipientEmail) => {
       `
     }
 
+    console.log('📤 Sending email via Gmail SMTP...')
     const info = await transporter.sendMail(mailOptions)
+    console.log(`✅ Email sent successfully! MessageId: ${info.messageId}`)
     
     return {
       success: true,
@@ -407,6 +414,7 @@ export const sendTestEmail = async (recipientEmail) => {
       message: 'Test email sent successfully'
     }
   } catch (error) {
+    console.log(`❌ Error in sendTestEmail: ${error.message}`)
     return {
       success: false,
       error: error.message

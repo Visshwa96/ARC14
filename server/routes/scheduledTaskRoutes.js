@@ -55,13 +55,17 @@ router.get('/', async (req, res) => {
 // Test email endpoint - MUST come before /:id routes!
 router.post('/test-email', async (req, res) => {
   try {
+    console.log('📧 TEST EMAIL REQUEST RECEIVED')
     const { email } = req.body
     
     if (!email) {
+      console.log('❌ No email provided')
       return res.status(400).json({ message: 'Email is required' })
     }
 
+    console.log(`📤 Attempting to send test email to: ${email}`)
     const result = await sendTestEmail(email)
+    console.log(`📧 Test email result:`, result)
     
     if (result.success) {
       res.json({ 
