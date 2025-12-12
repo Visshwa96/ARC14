@@ -20,6 +20,14 @@ export const sendTaskReminder = async (task, recipientEmail) => {
       return { success: false, message: 'Email not configured' }
     }
 
+    // Additional safety check - don't send if already sent
+    if (task.emailSent) {
+      console.warn(`⚠️ Email already sent for task: ${task.title} (ID: ${task._id})`)
+      return { success: false, message: 'Email already sent' }
+    }
+
+    console.log(`📧 Preparing to send email for task: ${task.title} (ID: ${task._id})`)
+
     const transporter = createTransporter()
 
     const scheduledDateTime = new Date(task.scheduledDate)

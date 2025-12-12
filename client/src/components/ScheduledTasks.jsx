@@ -150,19 +150,34 @@ function ScheduledTasks() {
     setEmailTestStatus(null)
 
     try {
+      // Add timeout to prevent infinite pending state
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 30000) // 30 second timeout
+
       const response = await axios.post(`${API_URL}/scheduled-tasks/test-email`, { 
         email: userEmail 
+      }, {
+        signal: controller.signal
       })
+      
+      clearTimeout(timeoutId)
       
       setEmailTestStatus({ 
         type: 'success', 
         message: 'Test email sent! Check your inbox (and spam folder).' 
       })
     } catch (error) {
-      setEmailTestStatus({ 
-        type: 'error', 
-        message: error.response?.data?.error || 'Failed to send test email. Check server logs.' 
-      })
+      if (error.name === 'CanceledError') {
+        setEmailTestStatus({ 
+          type: 'error', 
+          message: 'Request timed out. Please check your connection and try again.' 
+        })
+      } else {
+        setEmailTestStatus({ 
+          type: 'error', 
+          message: error.response?.data?.error || 'Failed to send test email. Check server logs.' 
+        })
+      }
     } finally {
       setTestingEmail(false)
     }
