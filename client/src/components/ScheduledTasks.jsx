@@ -152,7 +152,7 @@ function ScheduledTasks() {
     try {
       // Add timeout to prevent infinite pending state
       const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 30000) // 30 second timeout
+      const timeoutId = setTimeout(() => controller.abort(), 120000) // 120 second timeout (email can be slow on free tier)
 
       const response = await axios.post(`${API_URL}/scheduled-tasks/test-email`, { 
         email: userEmail 
