@@ -1,21 +1,13 @@
-import { createTransport } from 'nodemailer'
+import sgMail from '@sendgrid/mail'
 import ScheduledTask from '../models/ScheduledTask.js'
 
-// Email configuration
-const createTransporter = () => {
-  return createTransport({
-    service: 'gmail',
-    auth: {
-      user: process.env.GMAIL_USER,
-      pass: process.env.GMAIL_APP_PASSWORD // Use App Password, not regular password
-    }
-  })
-}
+// SendGrid configuration
+sgMail.setApiKey(process.env.SENDGRID_API_KEY)
 
 // Send task reminder email
 export const sendTaskReminder = async (task, recipientEmail) => {
   try {
-    if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
+    if (!process.env.SENDGRID_API_KEY || !process.env.SENDER_EMAIL) {
       console.warn('Email credentials not configured. Skipping email notification.')
       return { success: false, message: 'Email not configured' }
     }
@@ -27,8 +19,6 @@ export const sendTaskReminder = async (task, recipientEmail) => {
     }
 
     console.log(`📧 Preparing to send email for task: ${task.title} (ID: ${task._id})`)
-
-    const transporter = createTransporter()
 
     const scheduledDateTime = new Date(task.scheduledDate)
     const [hours, minutes] = task.scheduledTime.split(':')
@@ -225,13 +215,20 @@ export const sendTaskReminder = async (task, recipientEmail) => {
       `
     }
 
-    const info = await transporter.sendMail(mailOptions)
+    const msg = {
+      to: recipientEmail,
+      from: process.env.SENDER_EMAIL,
+      subject: `⏰ Reminder: ${task.title}`,
+      html: mailOptions.html
+    }
+
+    const response = await sgMail.send(msg)
     
     console.log(`✅ Email sent successfully to ${recipientEmail} for task: ${task.title}`)
     
     return {
       success: true,
-      messageId: info.messageId,
+      messageId: response[0].headers['x-message-id'],
       recipient: recipientEmail
     }
   } catch (error) {
@@ -377,21 +374,16 @@ export const sendTestEmail = async (recipientEmail) => {
   try {
     console.log(`📧 sendTestEmail called for: ${recipientEmail}`)
     
-    if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
+    if (!process.env.SENDGRID_API_KEY || !process.env.SENDER_EMAIL) {
       console.log('❌ Email credentials not configured')
       throw new Error('Email credentials not configured')
     }
 
-    console.log('✅ Email credentials found, creating transporter...')
-    const transporter = createTransporter()
+    console.log('✅ SendGrid credentials found, preparing message...')
 
-    console.log('📝 Preparing mail options...')
-    const mailOptions = {
-      from: {
-        name: 'ARC-14 Task Scheduler',
-        address: process.env.GMAIL_USER
-      },
+    const msg = {
       to: recipientEmail,
+      from: process.env.SENDER_EMAIL,
       subject: '✅ ARC-14 Email Service Test',
       html: `
         <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 500px; margin: 0 auto;">
@@ -399,18 +391,18 @@ export const sendTestEmail = async (recipientEmail) => {
           <p>Your ARC-14 email notification service is configured correctly.</p>
           <p>You will receive reminders for your scheduled tasks at the specified times.</p>
           <hr style="border: 1px solid #eee; margin: 20px 0;">
-          <p style="color: #666; font-size: 14px;">This is a test email from ARC-14 Task Scheduler</p>
+          <p style="color: #666; font-size: 14px;">This is a test email from ARC-14 Task Scheduler (via SendGrid)</p>
         </div>
       `
     }
 
-    console.log('📤 Sending email via Gmail SMTP...')
-    const info = await transporter.sendMail(mailOptions)
-    console.log(`✅ Email sent successfully! MessageId: ${info.messageId}`)
+    console.log('📤 Sending email via SendGrid HTTP API...')
+    const response = await sgMail.send(msg)
+    console.log(`✅ Email sent successfully! MessageId: ${response[0].headers['x-message-id']}`)
     
     return {
       success: true,
-      messageId: info.messageId,
+      messageId: response[0].headers['x-message-id'],
       message: 'Test email sent successfully'
     }
   } catch (error) {
