@@ -52,6 +52,36 @@ router.get('/', async (req, res) => {
   }
 })
 
+// Test email endpoint - MUST come before /:id routes!
+router.post('/test-email', async (req, res) => {
+  try {
+    const { email } = req.body
+    
+    if (!email) {
+      return res.status(400).json({ message: 'Email is required' })
+    }
+
+    const result = await sendTestEmail(email)
+    
+    if (result.success) {
+      res.json({ 
+        message: 'Test email sent successfully!', 
+        details: result 
+      })
+    } else {
+      res.status(500).json({ 
+        message: 'Failed to send test email', 
+        error: result.error 
+      })
+    }
+  } catch (error) {
+    res.status(500).json({ 
+      message: 'Error sending test email', 
+      error: error.message 
+    })
+  }
+})
+
 // Get single scheduled task by ID
 router.get('/:id', async (req, res) => {
   try {
@@ -450,36 +480,6 @@ router.put('/:id/email-sent', async (req, res) => {
     res.json(task)
   } catch (error) {
     res.status(500).json({ message: error.message })
-  }
-})
-
-// Test email endpoint
-router.post('/test-email', async (req, res) => {
-  try {
-    const { email } = req.body
-    
-    if (!email) {
-      return res.status(400).json({ message: 'Email is required' })
-    }
-
-    const result = await sendTestEmail(email)
-    
-    if (result.success) {
-      res.json({ 
-        message: 'Test email sent successfully!', 
-        details: result 
-      })
-    } else {
-      res.status(500).json({ 
-        message: 'Failed to send test email', 
-        error: result.error 
-      })
-    }
-  } catch (error) {
-    res.status(500).json({ 
-      message: 'Error sending test email', 
-      error: error.message 
-    })
   }
 })
 
