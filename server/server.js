@@ -23,27 +23,37 @@ const PORT = process.env.PORT || 5000
 // Middleware - CORS configuration for Vercel deployments
 const allowedOrigins = process.env.FRONTEND_URL 
   ? process.env.FRONTEND_URL.split(',').map(url => url.trim())
-  : ['*']
+  : []
 
 app.use(cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true)
     
+    // Log the origin for debugging
+    console.log(`🌐 CORS Request from: ${origin}`)
+    
     // Check if origin is allowed or matches Vercel pattern
-    const isAllowed = allowedOrigins.some(allowed => 
-      allowed === '*' || 
-      origin === allowed || 
-      origin.includes('vercel.app')
+    const isVercel = origin.includes('.vercel.app')
+    const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1')
+    const isInAllowedList = allowedOrigins.some(allowed => 
+      allowed === '*' || origin === allowed
     )
     
-    if (isAllowed) {
+    if (isVercel || isLocalhost || isInAllowedList || allowedOrigins.includes('*')) {
+      console.log(`✅ CORS: Allowed`)
       callback(null, true)
     } else {
-      callback(new Error('Not allowed by CORS'))
+      console.log(`❌ CORS: Blocked`)
+      // Don't throw error, just reject with false
+      callback(null, false)
     }
   },
-  credentials: true
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  exposedHeaders: ['Content-Range', 'X-Content-Range'],
+  maxAge: 600 // Cache preflight for 10 minutes
 }))
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
