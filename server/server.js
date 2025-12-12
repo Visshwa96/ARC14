@@ -21,9 +21,25 @@ const app = express()
 const PORT = process.env.PORT || 5000
 
 // Middleware
-app.use(cors())
+app.use(cors({
+  origin: process.env.FRONTEND_URL || '*',
+  credentials: true
+}))
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
+
+// Health check endpoint for monitoring
+app.get('/', (req, res) => {
+  res.json({ 
+    status: 'running', 
+    message: 'ARC14 Backend API',
+    timestamp: new Date().toISOString()
+  })
+})
+
+app.get('/health', (req, res) => {
+  res.json({ status: 'healthy', uptime: process.uptime() })
+})
 
 // Routes
 app.use('/api/habits', habitRoutes)

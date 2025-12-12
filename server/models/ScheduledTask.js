@@ -1,5 +1,47 @@
 import mongoose from 'mongoose'
 
+// Helper function to convert 12-hour time to 24-hour format
+function convertTo24Hour(timeStr) {
+  // Check if already in 24-hour format
+  if (/^([01]\d|2[0-3]):([0-5]\d)$/.test(timeStr)) {
+    return timeStr
+  }
+  
+  // Parse 12-hour format (e.g., "09:30 AM" or "2:45 PM")
+  const match = timeStr.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i)
+  if (!match) {
+    throw new Error('Invalid time format. Use HH:MM AM/PM')
+  }
+  
+  let hours = parseInt(match[1])
+  const minutes = match[2]
+  const period = match[3].toUpperCase()
+  
+  // Convert to 24-hour format
+  if (period === 'PM' && hours !== 12) {
+    hours += 12
+  } else if (period === 'AM' && hours === 12) {
+    hours = 0
+  }
+  
+  return `${String(hours).padStart(2, '0')}:${minutes}`
+}
+
+// Helper function to convert 24-hour time to 12-hour format with AM/PM
+function convertTo12Hour(timeStr) {
+  const [hours24, minutes] = timeStr.split(':')
+  let hours = parseInt(hours24)
+  const period = hours >= 12 ? 'PM' : 'AM'
+  
+  if (hours === 0) {
+    hours = 12
+  } else if (hours > 12) {
+    hours -= 12
+  }
+  
+  return `${hours}:${minutes} ${period}`
+}
+
 const scheduledTaskSchema = new mongoose.Schema({
   title: {
     type: String,
@@ -15,13 +57,14 @@ const scheduledTaskSchema = new mongoose.Schema({
     required: true
   },
   scheduledTime: {
-    type: String, // Format: "HH:MM" (24-hour)
+    type: String, // Format: "HH:MM AM/PM" or "HH:MM" (24-hour)
     required: true,
     validate: {
       validator: function(v) {
-        return /^([01]\d|2[0-3]):([0-5]\d)$/.test(v)
+        // Accept both 12-hour (with AM/PM) and 24-hour format
+        return /^([01]\d|2[0-3]):([0-5]\d)$/.test(v) || /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i.test(v)
       },
-      message: 'Time must be in HH:MM format (24-hour)'
+      message: 'Time must be in HH:MM AM/PM or HH:MM format (24-hour)'
     }
   },
   status: {
@@ -58,6 +101,23 @@ const scheduledTaskSchema = new mongoose.Schema({
 }, {
   timestamps: true
 })
+
+// Pre-save hook to convert 12-hour format to 24-hour format for storage
+scheduledTaskSchema.pre('save', function(next) {
+  if (this.isModified('scheduledTime')) {
+    try {
+      this.scheduledTime = convertTo24Hour(this.scheduledTime)
+    } catch (error) {
+      return next(error)
+    }
+  }
+  next()
+})
+
+// Method to get time in 12-hour format
+scheduledTaskSchema.methods.getTime12Hour = function() {
+  return convertTo12Hour(this.scheduledTime)
+}
 
 // Index for querying by date and status
 scheduledTaskSchema.index({ scheduledDate: 1, status: 1 })
@@ -127,3 +187,4 @@ scheduledTaskSchema.virtual('formattedScheduledTime').get(function() {
 const ScheduledTask = mongoose.model('ScheduledTask', scheduledTaskSchema)
 
 export default ScheduledTask
+export { convertTo24Hour, convertTo12Hour }

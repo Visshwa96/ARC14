@@ -14,6 +14,12 @@ function ScheduledTasks() {
     category: 'personal'
   })
   
+  const [timeInput, setTimeInput] = useState({
+    hour: '12',
+    minute: '00',
+    period: 'PM'
+  })
+  
   const [filter, setFilter] = useState('upcoming')
   const [stats, setStats] = useState(null)
   const [editingId, setEditingId] = useState(null)
@@ -54,11 +60,15 @@ function ScheduledTasks() {
   const handleSubmit = async (e) => {
     e.preventDefault()
     
+    // Combine time input into scheduledTime format
+    const formattedTime = `${timeInput.hour}:${timeInput.minute} ${timeInput.period}`
+    const submitData = { ...formData, scheduledTime: formattedTime }
+    
     if (editingId) {
-      await updateScheduledTask(editingId, formData)
+      await updateScheduledTask(editingId, submitData)
       setEditingId(null)
     } else {
-      await createScheduledTask(formData)
+      await createScheduledTask(submitData)
     }
     
     resetForm()
@@ -67,6 +77,16 @@ function ScheduledTasks() {
   }
 
   const handleEdit = (task) => {
+    // Parse scheduledTime from "7:30 PM" format
+    const timeMatch = task.scheduledTime.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i)
+    if (timeMatch) {
+      setTimeInput({
+        hour: timeMatch[1],
+        minute: timeMatch[2],
+        period: timeMatch[3].toUpperCase()
+      })
+    }
+    
     setFormData({
       title: task.title,
       description: task.description || '',
@@ -101,6 +121,11 @@ function ScheduledTasks() {
       scheduledTime: '',
       priority: 'medium',
       category: 'personal'
+    })
+    setTimeInput({
+      hour: '12',
+      minute: '00',
+      period: 'PM'
     })
     setEditingId(null)
   }
@@ -403,13 +428,44 @@ function ScheduledTasks() {
               <label className="block text-sm font-medium text-slate-300 mb-2">
                 Time *
               </label>
-              <input
-                type="time"
-                value={formData.scheduledTime}
-                onChange={(e) => setFormData({ ...formData, scheduledTime: e.target.value })}
-                className="input"
-                required
-              />
+              <div className="flex gap-2">
+                {/* Hour */}
+                <select
+                  value={timeInput.hour}
+                  onChange={(e) => setTimeInput({ ...timeInput, hour: e.target.value })}
+                  className="input flex-1"
+                  required
+                >
+                  <option value="">Hour</option>
+                  {Array.from({ length: 12 }, (_, i) => i + 1).map(h => (
+                    <option key={h} value={h}>{h}</option>
+                  ))}
+                </select>
+                
+                {/* Minute */}
+                <select
+                  value={timeInput.minute}
+                  onChange={(e) => setTimeInput({ ...timeInput, minute: e.target.value })}
+                  className="input flex-1"
+                  required
+                >
+                  <option value="">Min</option>
+                  {['00', '15', '30', '45'].map(m => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+                
+                {/* AM/PM */}
+                <select
+                  value={timeInput.period}
+                  onChange={(e) => setTimeInput({ ...timeInput, period: e.target.value })}
+                  className="input flex-1"
+                  required
+                >
+                  <option value="AM">AM</option>
+                  <option value="PM">PM</option>
+                </select>
+              </div>
             </div>
             
             <div>
