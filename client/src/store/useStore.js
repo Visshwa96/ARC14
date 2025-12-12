@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import axios from 'axios'
 
-const API_URL = '/api'
+const API_URL = 'http://localhost:5000/api'
 
 const useStore = create((set, get) => ({
   // State
@@ -14,7 +14,7 @@ const useStore = create((set, get) => ({
 
   // Habits
   fetchHabits: async () => {
-    set({ loading: true })
+    set({ loading: true, error: null })
     try {
       const response = await axios.get(`${API_URL}/habits`)
       set({ habits: response.data, loading: false })
@@ -202,8 +202,86 @@ const useStore = create((set, get) => ({
     }
   },
 
+  // Scheduled Tasks
+  scheduledTasks: [],
+  
+  fetchScheduledTasks: async (filters = {}) => {
+    set({ loading: true, error: null })
+    try {
+      const params = new URLSearchParams(filters)
+      const response = await axios.get(`${API_URL}/scheduled-tasks?${params}`)
+      set({ scheduledTasks: response.data, loading: false })
+    } catch (error) {
+      set({ error: error.message, loading: false })
+    }
+  },
+
+  createScheduledTask: async (task) => {
+    try {
+      const response = await axios.post(`${API_URL}/scheduled-tasks`, task)
+      set((state) => ({ 
+        scheduledTasks: [...state.scheduledTasks, response.data] 
+      }))
+      return response.data
+    } catch (error) {
+      set({ error: error.message })
+      return null
+    }
+  },
+
+  updateScheduledTask: async (id, updates) => {
+    try {
+      const response = await axios.put(`${API_URL}/scheduled-tasks/${id}`, updates)
+      set((state) => ({
+        scheduledTasks: state.scheduledTasks.map((t) => 
+          t._id === id ? response.data : t
+        ),
+      }))
+      return response.data
+    } catch (error) {
+      set({ error: error.message })
+      return null
+    }
+  },
+
+  completeScheduledTask: async (id) => {
+    try {
+      const response = await axios.put(`${API_URL}/scheduled-tasks/${id}/complete`)
+      set((state) => ({
+        scheduledTasks: state.scheduledTasks.map((t) => 
+          t._id === id ? response.data : t
+        ),
+      }))
+      return response.data
+    } catch (error) {
+      set({ error: error.message })
+      return null
+    }
+  },
+
+  deleteScheduledTask: async (id) => {
+    try {
+      await axios.delete(`${API_URL}/scheduled-tasks/${id}`)
+      set((state) => ({
+        scheduledTasks: state.scheduledTasks.filter((t) => t._id !== id),
+      }))
+    } catch (error) {
+      set({ error: error.message })
+    }
+  },
+
+  fetchTaskStats: async () => {
+    try {
+      const response = await axios.get(`${API_URL}/scheduled-tasks/stats/summary`)
+      return response.data
+    } catch (error) {
+      set({ error: error.message })
+      return null
+    }
+  },
+
   // Clear error
   clearError: () => set({ error: null }),
-}))
+}));
 
 export default useStore

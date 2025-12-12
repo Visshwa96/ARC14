@@ -7,6 +7,7 @@ function Sidebar() {
     { path: '/logs', label: 'Daily Logs', icon: '📝' },
     { path: '/journal', label: 'Journal', icon: '📖' },
     { path: '/arc-cycles', label: 'ARC Cycles', icon: '🔄' },
+    { path: '/scheduled-tasks', label: 'Scheduled Tasks', icon: '⏰' },
   ]
 
   return (

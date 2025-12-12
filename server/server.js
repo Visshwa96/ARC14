@@ -2,6 +2,7 @@ import express from 'express'
 import mongoose from 'mongoose'
 import cors from 'cors'
 import dotenv from 'dotenv'
+import cron from 'node-cron'
 
 // Import routes
 import habitRoutes from './routes/habitRoutes.js'
@@ -9,6 +10,10 @@ import logRoutes from './routes/logRoutes.js'
 import journalRoutes from './routes/journalRoutes.js'
 import arcCycleRoutes from './routes/arcCycleRoutes.js'
 import mirror14Routes from './routes/mirror14Routes.js'
+import scheduledTaskRoutes from './routes/scheduledTaskRoutes.js'
+
+// Import services
+import { checkAndSendReminders } from './services/emailService.js'
 
 dotenv.config()
 
@@ -26,6 +31,7 @@ app.use('/api/logs', logRoutes)
 app.use('/api/journals', journalRoutes)
 app.use('/api/arc-cycles', arcCycleRoutes)
 app.use('/api/mirror14', mirror14Routes)
+app.use('/api/scheduled-tasks', scheduledTaskRoutes)
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -39,6 +45,25 @@ mongoose
     console.log('✅ Connected to MongoDB')
     app.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`)
+      
+      // Start cron job for email reminders - runs every 5 minutes
+      cron.schedule('*/5 * * * *', async () => {
+        try {
+          const result = await checkAndSendReminders()
+          
+          if (result.count > 0) {
+            console.log(`\n🎉 Successfully sent ${result.count} reminder email(s)\n`)
+          }
+        } catch (error) {
+          console.error(`\n❌ Error in scheduled reminder check:`, error.message, '\n')
+        }
+      })
+      
+      console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+      console.log('📧 Email Reminder Scheduler: ACTIVE')
+      console.log('⏰ Check Frequency: Every 5 minutes')
+      console.log('📬 Sends reminders: 30 minutes before task')
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n')
     })
   })
   .catch((error) => {

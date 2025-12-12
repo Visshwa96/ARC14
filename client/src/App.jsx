@@ -6,6 +6,7 @@ import HabitTracker from './components/HabitTracker'
 import DailyLogs from './components/DailyLogs'
 import Journal from './components/Journal'
 import ARCCycles from './components/ARCCycles'
+import ScheduledTasks from './components/ScheduledTasks'
 import Layout from './components/Layout'
 
 function App() {
@@ -32,6 +33,7 @@ function App() {
         <Route path="logs" element={<DailyLogs />} />
         <Route path="journal" element={<Journal />} />
         <Route path="arc-cycles" element={<ARCCycles />} />
+        <Route path="scheduled-tasks" element={<ScheduledTasks />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

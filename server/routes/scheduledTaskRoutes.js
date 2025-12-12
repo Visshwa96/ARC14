@@ -1,0 +1,558 @@
+import express from 'express'
+import ScheduledTask from '../models/ScheduledTask.js'
+import { sendTestEmail, sendTaskReminder } from '../services/emailService.js'
+
+const router = express.Router()
+
+// Get all scheduled tasks with filtering
+router.get('/', async (req, res) => {
+  try {
+    const { status, date, upcoming } = req.query
+    let query = {}
+
+    if (status) {
+      query.status = status
+    }
+
+    if (date) {
+      const targetDate = new Date(date)
+      const nextDay = new Date(targetDate)
+      nextDay.setDate(nextDay.getDate() + 1)
+      query.scheduledDate = {
+        $gte: targetDate,
+        $lt: nextDay
+      }
+    }
+
+    if (upcoming === 'true') {
+      query.scheduledDate = { $gte: new Date() }
+      query.status = 'pending'
+    }
+
+    const tasks = await ScheduledTask.find(query)
+      .sort({ scheduledDate: 1, scheduledTime: 1 })
+
+    // Check and update missed tasks
+    for (let task of tasks) {
+      if (task.checkIfMissed()) {
+        await task.save()
+      }
+    }
+
+    res.json(tasks)
+  } catch (error) {
+    res.status(500).json({ message: error.message })
+  }
+})
+
+// Get single scheduled task by ID
+router.get('/:id', async (req, res) => {
+  try {
+    const task = await ScheduledTask.findById(req.params.id)
+    if (!task) {
+      return res.status(404).json({ message: 'Task not found' })
+    }
+    
+    // Check if missed
+    if (task.checkIfMissed()) {
+      await task.save()
+    }
+    
+    res.json(task)
+  } catch (error) {
+    res.status(500).json({ message: error.message })
+  }
+})
+
+// Create new scheduled task
+router.post('/', async (req, res) => {
+  try {
+    const now = new Date()
+    const currentHour = now.getHours()
+    
+    // Get scheduling cutoff time from environment variables (default 9 PM)
+    const schedulingCutoffHour = parseInt(process.env.TASK_SCHEDULING_START_HOUR) || 21
+    
+    // Check if current time is before cutoff (can schedule anytime before 9 PM)
+    if (currentHour >= schedulingCutoffHour) {
+      console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+      console.log('❌ TASK CREATION BLOCKED')
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+      console.log(`🕐 Current Time: ${now.toLocaleTimeString('en-US')}`)
+      console.log(`⏰ Scheduling Cutoff: ${schedulingCutoffHour}:00`)
+      console.log(`❌ Reason: Cannot schedule tasks after ${schedulingCutoffHour}:00`)
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n')
+      
+      return res.status(403).json({ 
+        message: `Tasks can only be created before ${schedulingCutoffHour}:00. Scheduling closes for the day!`,
+        schedulingCutoff: `${schedulingCutoffHour}:00`,
+        currentTime: now.toLocaleTimeString('en-US', { hour12: false })
+      })
+    }
+    
+    // Determine minimum date for task scheduling
+    const taskDate = new Date(req.body.scheduledDate)
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const tomorrow = new Date(today)
+    tomorrow.setDate(tomorrow.getDate() + 1)
+    const dayAfterTomorrow = new Date(tomorrow)
+    dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 1)
+    
+    taskDate.setHours(0, 0, 0, 0)
+    
+    // Check if all tomorrow's tasks are completed
+    const tomorrowsTasks = await ScheduledTask.find({
+      scheduledDate: {
+        $gte: tomorrow,
+        $lt: dayAfterTomorrow
+      }
+    })
+    
+    const allTomorrowsTasksCompleted = tomorrowsTasks.length > 0 && 
+      tomorrowsTasks.every(task => task.status === 'completed')
+    
+    let minimumDate = tomorrow
+    let allowedDateMessage = 'Tomorrow'
+    
+    // If all tomorrow's tasks are completed, allow planning for day after tomorrow
+    if (allTomorrowsTasksCompleted) {
+      minimumDate = dayAfterTomorrow
+      allowedDateMessage = 'Day After Tomorrow'
+      
+      console.log('\n🎉 EARLY COMPLETION BONUS!')
+      console.log(`✅ All tasks for ${tomorrow.toLocaleDateString('en-US')} are completed`)
+      console.log(`📅 You can now plan for ${dayAfterTomorrow.toLocaleDateString('en-US')}\n`)
+    }
+    
+    // Validate task date is at or after minimum date
+    if (taskDate < minimumDate) {
+      console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+      console.log('❌ TASK CREATION BLOCKED')
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+      console.log(`📅 Attempted Date: ${taskDate.toLocaleDateString('en-US')}`)
+      console.log(`📅 Minimum Allowed: ${minimumDate.toLocaleDateString('en-US')} (${allowedDateMessage})`)
+      console.log(`❌ Reason: Cannot create tasks for dates before ${allowedDateMessage.toLowerCase()}`)
+      if (allTomorrowsTasksCompleted) {
+        console.log(`✅ You've completed tomorrow's tasks - planning for ${allowedDateMessage}!`)
+      }
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n')
+      
+      return res.status(403).json({ 
+        message: allTomorrowsTasksCompleted 
+          ? `Great job! All tomorrow's tasks are complete. You can now plan for ${minimumDate.toISOString().split('T')[0]}`
+          : `Tasks can only be created for ${allowedDateMessage.toLowerCase()} or future dates. Complete today's tasks to earn points!`,
+        minimumDate: minimumDate.toISOString().split('T')[0],
+        attemptedDate: req.body.scheduledDate,
+        earlyCompletionBonus: allTomorrowsTasksCompleted
+      })
+    }
+    
+    const task = new ScheduledTask(req.body)
+    const savedTask = await task.save()
+    
+    // Calculate when email reminder will be sent (30 minutes before)
+    const scheduledDateTime = new Date(savedTask.scheduledDate)
+    const [hours, minutes] = savedTask.scheduledTime.split(':')
+    scheduledDateTime.setHours(parseInt(hours), parseInt(minutes))
+    
+    const reminderTime = new Date(scheduledDateTime.getTime() - 30 * 60000)
+    
+    console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+    console.log('✨ NEW TASK CREATED')
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+    console.log(`📌 Title: ${savedTask.title}`)
+    console.log(`📅 Date: ${scheduledDateTime.toLocaleDateString('en-US')}`)
+    console.log(`🕐 Time: ${savedTask.scheduledTime}`)
+    console.log(`🎯 Priority: ${savedTask.priority.toUpperCase()}`)
+    console.log(`📁 Category: ${savedTask.category}`)
+    console.log(`📧 Email Reminder: Will be sent at ${reminderTime.toLocaleString('en-US')}`)
+    console.log(`⏱️  Time Until Task: ${Math.round((scheduledDateTime - now) / 60000)} minutes`)
+    console.log(`✅ Created before ${schedulingCutoffHour}:00 cutoff`)
+    if (allTomorrowsTasksCompleted) {
+      console.log(`🎉 EARLY COMPLETION: Planning ahead for ${allowedDateMessage}!`)
+    }
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n')
+    
+    res.status(201).json(savedTask)
+  } catch (error) {
+    res.status(400).json({ message: error.message })
+  }
+})
+
+// Update scheduled task
+router.put('/:id', async (req, res) => {
+  try {
+    const now = new Date()
+    const currentHour = now.getHours()
+    const schedulingCutoffHour = parseInt(process.env.TASK_SCHEDULING_START_HOUR) || 21
+    
+    // Check if current time is before cutoff
+    if (currentHour >= schedulingCutoffHour) {
+      console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+      console.log('❌ TASK UPDATE BLOCKED')
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+      console.log(`🕐 Current Time: ${now.toLocaleTimeString('en-US')}`)
+      console.log(`⏰ Scheduling Cutoff: ${schedulingCutoffHour}:00`)
+      console.log(`❌ Reason: Task modifications only allowed before ${schedulingCutoffHour}:00`)
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n')
+      
+      return res.status(403).json({ 
+        message: `Tasks can only be modified before ${schedulingCutoffHour}:00`,
+        schedulingCutoff: `${schedulingCutoffHour}:00`,
+        currentTime: now.toLocaleTimeString('en-US', { hour12: false })
+      })
+    }
+    
+    const task = await ScheduledTask.findById(req.params.id)
+    if (!task) {
+      return res.status(404).json({ message: 'Task not found' })
+    }
+
+    const oldTitle = task.title
+    const oldTime = task.scheduledTime
+    const oldDate = new Date(task.scheduledDate).toLocaleDateString('en-US')
+
+    // Update allowed fields
+    const allowedUpdates = ['title', 'description', 'scheduledDate', 'scheduledTime', 'priority', 'category']
+    allowedUpdates.forEach(field => {
+      if (req.body[field] !== undefined) {
+        task[field] = req.body[field]
+      }
+    })
+
+    const updatedTask = await task.save()
+    
+    // Log the update
+    console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+    console.log('✏️  TASK UPDATED')
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+    console.log(`📌 Task: ${oldTitle}${oldTitle !== updatedTask.title ? ` → ${updatedTask.title}` : ''}`)
+    
+    if (oldTime !== updatedTask.scheduledTime || oldDate !== new Date(updatedTask.scheduledDate).toLocaleDateString('en-US')) {
+      console.log(`📅 OLD Schedule: ${oldDate} at ${oldTime}`)
+      console.log(`📅 NEW Schedule: ${new Date(updatedTask.scheduledDate).toLocaleDateString('en-US')} at ${updatedTask.scheduledTime}`)
+      console.log(`📧 Email reminder will be reset (emailSent: ${updatedTask.emailSent})`)
+    }
+    
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n')
+    
+    res.json(updatedTask)
+  } catch (error) {
+    res.status(400).json({ message: error.message })
+  }
+})
+
+// Complete a scheduled task
+router.put('/:id/complete', async (req, res) => {
+  try {
+    const task = await ScheduledTask.findById(req.params.id)
+    if (!task) {
+      return res.status(404).json({ message: 'Task not found' })
+    }
+
+    if (task.status === 'completed') {
+      return res.status(400).json({ message: 'Task already completed' })
+    }
+
+    if (task.status === 'missed') {
+      return res.status(400).json({ message: 'Cannot complete a missed task' })
+    }
+
+    // Mark as completed
+    task.status = 'completed'
+    task.completedAt = new Date()
+    task.punctualityPoints = task.calculatePunctuality()
+
+    const completedTask = await task.save()
+    
+    // Calculate how early/late
+    const scheduledDateTime = new Date(completedTask.scheduledDate)
+    const [hours, minutes] = completedTask.scheduledTime.split(':')
+    scheduledDateTime.setHours(parseInt(hours), parseInt(minutes))
+    const difference = Math.round((completedTask.completedAt - scheduledDateTime) / 60000)
+    
+    let punctualityStatus = ''
+    if (difference <= -5) punctualityStatus = '🌟 EARLY'
+    else if (difference <= 5) punctualityStatus = '✅ ON TIME'
+    else if (difference <= 15) punctualityStatus = '⚠️ SLIGHTLY LATE'
+    else if (difference <= 30) punctualityStatus = '⚠️ LATE'
+    else punctualityStatus = '❌ VERY LATE'
+    
+    console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+    console.log('✅ TASK COMPLETED')
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+    console.log(`📌 Task: ${completedTask.title}`)
+    console.log(`🕐 Scheduled Time: ${completedTask.scheduledTime}`)
+    console.log(`✅ Completed At: ${completedTask.completedAt.toLocaleTimeString('en-US')}`)
+    console.log(`⏱️  Difference: ${difference > 0 ? '+' : ''}${difference} minutes`)
+    console.log(`${punctualityStatus}`)
+    console.log(`🎯 Points Earned: ${completedTask.punctualityPoints}/10`)
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n')
+    
+    res.json(completedTask)
+  } catch (error) {
+    res.status(400).json({ message: error.message })
+  }
+})
+
+// Delete scheduled task
+router.delete('/:id', async (req, res) => {
+  try {
+    const now = new Date()
+    const currentHour = now.getHours()
+    const schedulingCutoffHour = parseInt(process.env.TASK_SCHEDULING_START_HOUR) || 21
+    
+    // Check if current time is before cutoff
+    if (currentHour >= schedulingCutoffHour) {
+      console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+      console.log('❌ TASK DELETION BLOCKED')
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+      console.log(`🕐 Current Time: ${now.toLocaleTimeString('en-US')}`)
+      console.log(`⏰ Scheduling Cutoff: ${schedulingCutoffHour}:00`)
+      console.log(`❌ Reason: Task deletion only allowed before ${schedulingCutoffHour}:00`)
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n')
+      
+      return res.status(403).json({ 
+        message: `Tasks can only be deleted before ${schedulingCutoffHour}:00`,
+        schedulingCutoff: `${schedulingCutoffHour}:00`,
+        currentTime: now.toLocaleTimeString('en-US', { hour12: false })
+      })
+    }
+    
+    const task = await ScheduledTask.findByIdAndDelete(req.params.id)
+    if (!task) {
+      return res.status(404).json({ message: 'Task not found' })
+    }
+    
+    console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+    console.log('🗑️  TASK DELETED')
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+    console.log(`📌 Task: ${task.title}`)
+    console.log(`📅 Was scheduled: ${new Date(task.scheduledDate).toLocaleDateString('en-US')} at ${task.scheduledTime}`)
+    console.log(`📊 Status: ${task.status.toUpperCase()}`)
+    console.log(`✅ Deleted before ${schedulingCutoffHour}:00 cutoff`)
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n')
+    
+    res.json({ message: 'Task deleted successfully' })
+  } catch (error) {
+    res.status(500).json({ message: error.message })
+  }
+})
+
+// Get statistics for scheduled tasks
+router.get('/stats/summary', async (req, res) => {
+  try {
+    const totalTasks = await ScheduledTask.countDocuments()
+    const completedTasks = await ScheduledTask.countDocuments({ status: 'completed' })
+    const missedTasks = await ScheduledTask.countDocuments({ status: 'missed' })
+    const pendingTasks = await ScheduledTask.countDocuments({ status: 'pending' })
+
+    // Calculate average punctuality points
+    const completedWithPoints = await ScheduledTask.find({ 
+      status: 'completed',
+      punctualityPoints: { $gt: 0 }
+    })
+    const avgPoints = completedWithPoints.length > 0
+      ? completedWithPoints.reduce((sum, task) => sum + task.punctualityPoints, 0) / completedWithPoints.length
+      : 0
+
+    // Get total points earned
+    const totalPoints = await ScheduledTask.aggregate([
+      { $match: { status: 'completed' } },
+      { $group: { _id: null, total: { $sum: '$punctualityPoints' } } }
+    ])
+
+    res.json({
+      totalTasks,
+      completedTasks,
+      missedTasks,
+      pendingTasks,
+      averagePunctualityScore: Math.round(avgPoints * 10) / 10,
+      totalPointsEarned: totalPoints[0]?.total || 0,
+      completionRate: totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0
+    })
+  } catch (error) {
+    res.status(500).json({ message: error.message })
+  }
+})
+
+// Get tasks that need email reminders (for cron job)
+router.get('/email/pending', async (req, res) => {
+  try {
+    const now = new Date()
+    const reminderWindow = new Date(now.getTime() + 30 * 60000) // 30 minutes ahead
+
+    const tasks = await ScheduledTask.find({
+      status: 'pending',
+      emailSent: false,
+      scheduledDate: {
+        $gte: now,
+        $lte: reminderWindow
+      }
+    })
+
+    res.json(tasks)
+  } catch (error) {
+    res.status(500).json({ message: error.message })
+  }
+})
+
+// Mark email as sent (called by email service)
+router.put('/:id/email-sent', async (req, res) => {
+  try {
+    const task = await ScheduledTask.findByIdAndUpdate(
+      req.params.id,
+      { 
+        emailSent: true,
+        emailSentAt: new Date()
+      },
+      { new: true }
+    )
+    
+    if (!task) {
+      return res.status(404).json({ message: 'Task not found' })
+    }
+    
+    res.json(task)
+  } catch (error) {
+    res.status(500).json({ message: error.message })
+  }
+})
+
+// Test email endpoint
+router.post('/test-email', async (req, res) => {
+  try {
+    const { email } = req.body
+    
+    if (!email) {
+      return res.status(400).json({ message: 'Email is required' })
+    }
+
+    const result = await sendTestEmail(email)
+    
+    if (result.success) {
+      res.json({ 
+        message: 'Test email sent successfully!', 
+        details: result 
+      })
+    } else {
+      res.status(500).json({ 
+        message: 'Failed to send test email', 
+        error: result.error 
+      })
+    }
+  } catch (error) {
+    res.status(500).json({ 
+      message: 'Error sending test email', 
+      error: error.message 
+    })
+  }
+})
+
+// Send reminder for specific task
+router.post('/:id/send-reminder', async (req, res) => {
+  try {
+    const { email } = req.body
+    
+    if (!email) {
+      return res.status(400).json({ message: 'Email is required' })
+    }
+
+    const task = await ScheduledTask.findById(req.params.id)
+    if (!task) {
+      return res.status(404).json({ message: 'Task not found' })
+    }
+
+    const result = await sendTaskReminder(task, email)
+    
+    if (result.success) {
+      task.emailSent = true
+      task.emailSentAt = new Date()
+      await task.save()
+      
+      res.json({ 
+        message: 'Reminder sent successfully!', 
+        details: result 
+      })
+    } else {
+      res.status(500).json({ 
+        message: 'Failed to send reminder', 
+        error: result.error 
+      })
+    }
+  } catch (error) {
+    res.status(500).json({ 
+      message: 'Error sending reminder', 
+      error: error.message 
+    })
+  }
+})
+
+// Get scheduling configuration
+router.get('/config/scheduling-window', async (req, res) => {
+  try {
+    const schedulingCutoffHour = parseInt(process.env.TASK_SCHEDULING_START_HOUR) || 21
+    
+    const now = new Date()
+    const currentHour = now.getHours()
+    const canSchedule = currentHour < schedulingCutoffHour
+    
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const tomorrow = new Date(today)
+    tomorrow.setDate(tomorrow.getDate() + 1)
+    const dayAfterTomorrow = new Date(tomorrow)
+    dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 1)
+    
+    // Check if all tomorrow's tasks are completed
+    const tomorrowsTasks = await ScheduledTask.find({
+      scheduledDate: {
+        $gte: tomorrow,
+        $lt: dayAfterTomorrow
+      }
+    })
+    
+    const allTomorrowsTasksCompleted = tomorrowsTasks.length > 0 && 
+      tomorrowsTasks.every(task => task.status === 'completed')
+    
+    const minimumDate = allTomorrowsTasksCompleted ? dayAfterTomorrow : tomorrow
+    const allowedDateMessage = allTomorrowsTasksCompleted ? 'Day After Tomorrow' : 'Tomorrow'
+    
+    res.json({
+      schedulingWindow: {
+        cutoffHour: schedulingCutoffHour,
+        cutoffTime: `${schedulingCutoffHour.toString().padStart(2, '0')}:00`,
+        allowedPeriod: `00:00 - ${schedulingCutoffHour.toString().padStart(2, '0')}:00`
+      },
+      currentStatus: {
+        currentTime: now.toLocaleTimeString('en-US', { hour12: false }),
+        canSchedule: canSchedule,
+        canCreateTasks: canSchedule,
+        canModifyTasks: canSchedule,
+        canDeleteTasks: canSchedule
+      },
+      rules: {
+        canCreateTasksForToday: false,
+        minimumTaskDate: minimumDate.toISOString().split('T')[0],
+        minimumTaskDateFormatted: minimumDate.toLocaleDateString('en-US'),
+        minimumTaskDescription: allowedDateMessage,
+        schedulingDescription: `You can schedule tasks anytime before ${schedulingCutoffHour}:00`
+      },
+      earlyCompletionBonus: {
+        active: allTomorrowsTasksCompleted,
+        tomorrowTasksCount: tomorrowsTasks.length,
+        tomorrowCompletedCount: tomorrowsTasks.filter(t => t.status === 'completed').length,
+        message: allTomorrowsTasksCompleted 
+          ? `🎉 Great job! All ${tomorrowsTasks.length} tasks for tomorrow are completed. You can now plan for ${allowedDateMessage}!`
+          : tomorrowsTasks.length > 0 
+            ? `Complete all ${tomorrowsTasks.length} tasks for tomorrow to unlock early planning.`
+            : `Create and complete tasks for tomorrow to unlock early planning!`
+      }
+    })
+  } catch (error) {
+    res.status(500).json({ message: error.message })
+  }
+})
+
+export default router

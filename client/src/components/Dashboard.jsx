@@ -3,19 +3,33 @@ import { Link } from 'react-router-dom'
 import useStore from '../store/useStore'
 
 function Dashboard() {
-  const { habits, logs, arcCycles, fetchHabits, fetchLogs, fetchARCCycles } = useStore()
+  const { habits, logs, arcCycles, fetchHabits, fetchLogs, fetchARCCycles, loading, error } = useStore()
   const [stats, setStats] = useState({
     totalHabits: 0,
     completedToday: 0,
     totalLogs: 0,
     activeARCCycles: 0,
   })
+  const [isLoading, setIsLoading] = useState(true)
 
-  useEffect(() => {
-    fetchHabits()
-    fetchLogs()
-    fetchARCCycles()
-  }, [fetchHabits, fetchLogs, fetchARCCycles])
+useEffect(() => {
+  const fetchData = async () => {
+    setIsLoading(true)
+    try {
+      await Promise.all([
+        fetchHabits(),
+        fetchLogs(),
+        fetchARCCycles()
+      ])
+    } catch (err) {
+      console.error("Error fetching data:", err)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  fetchData()
+}, [])   // IMPORTANT: no dependencies here
 
   useEffect(() => {
     const today = new Date().toISOString().split('T')[0]
@@ -34,10 +48,10 @@ function Dashboard() {
   }, [habits, logs, arcCycles])
 
   const statCards = [
-    { label: 'Total Habits', value: stats.totalHabits, icon: '✓', color: 'blue' },
-    { label: 'Completed Today', value: stats.completedToday, icon: '🎯', color: 'green' },
-    { label: 'Daily Logs', value: stats.totalLogs, icon: '📝', color: 'purple' },
-    { label: 'Active ARC Cycles', value: stats.activeARCCycles, icon: '🔄', color: 'orange' },
+    { label: 'Total Habits', value: stats.totalHabits, icon: '✓', colorClass: 'text-blue-400' },
+    { label: 'Completed Today', value: stats.completedToday, icon: '🎯', colorClass: 'text-green-400' },
+    { label: 'Daily Logs', value: stats.totalLogs, icon: '📝', colorClass: 'text-purple-400' },
+    { label: 'Active ARC Cycles', value: stats.activeARCCycles, icon: '🔄', colorClass: 'text-orange-400' },
   ]
 
   return (
@@ -47,15 +61,28 @@ function Dashboard() {
         <p className="text-slate-400">Welcome to your ARC-14 system overview</p>
       </div>
 
+      {/* Loading State */}
+      {isLoading && (
+        <div className="card text-center">
+          <p className="text-slate-400">Loading your data...</p>
+        </div>
+      )}
+
+      {/* Error Display */}
+      {!isLoading && error && (
+        <div className="card bg-red-900/30 border-red-700">
+          <p className="text-red-300">⚠️ Unable to connect to backend. Make sure the server is running on port 5000.</p>
+          <p className="text-sm text-red-400 mt-2">Run: cd server && npm run dev</p>
+        </div>
+      )}
+
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {statCards.map((card) => (
           <div key={card.label} className="card">
             <div className="flex items-center justify-between mb-4">
               <span className="text-3xl">{card.icon}</span>
-              <div
-                className={`text-4xl font-bold bg-gradient-to-r from-${card.color}-400 to-${card.color}-600 text-transparent bg-clip-text`}
-              >
+              <div className={`text-4xl font-bold ${card.colorClass}`}>
                 {card.value}
               </div>
             </div>
