@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import axios from 'axios'
 import useStore from '../store/useStore'
 
-const API_URL = import.meta.env.VITE_BACKEND_URL || (window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : '/api')
+// Use the same API base URL as the global store (VITE_API_URL). Fallback to localhost for dev.
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
 
 function ScheduledTasks() {
   const { scheduledTasks, fetchScheduledTasks, createScheduledTask, updateScheduledTask, completeScheduledTask, deleteScheduledTask, fetchTaskStats, loading, error } = useStore()
