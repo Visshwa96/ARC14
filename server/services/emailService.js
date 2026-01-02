@@ -51,10 +51,7 @@ export const sendTaskReminder = async (task, recipientEmail) => {
     }
 
     const mailOptions = {
-      from: {
-        name: 'ARC-14 Task Scheduler',
-        address: process.env.GMAIL_USER
-      },
+      from: process.env.SENDER_EMAIL,  // Simple string format
       to: recipientEmail,
       subject: `⏰ Reminder: ${task.title}`,
       html: `
@@ -383,7 +380,7 @@ export const sendTestEmail = async (recipientEmail) => {
 
     const msg = {
       to: recipientEmail,
-      from: process.env.SENDER_EMAIL,
+      from: process.env.SENDER_EMAIL,  // Simple string format
       subject: '✅ ARC-14 Email Service Test',
       html: `
         <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 500px; margin: 0 auto;">

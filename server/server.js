@@ -17,6 +17,13 @@ import { checkAndSendReminders } from './services/emailService.js'
 
 dotenv.config()
 
+// Debug: Log env variables loading
+console.log('🔍 Environment Variables Check:')
+console.log('   SENDGRID_API_KEY:', process.env.SENDGRID_API_KEY ? `EXISTS (${process.env.SENDGRID_API_KEY.substring(0, 10)}...)` : '❌ MISSING')
+console.log('   SENDER_EMAIL:', process.env.SENDER_EMAIL || '❌ MISSING')
+console.log('   PORT:', process.env.PORT || '❌ MISSING')
+console.log('')
+
 const app = express()
 const PORT = process.env.PORT || 5000
 
